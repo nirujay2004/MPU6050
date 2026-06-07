@@ -12,6 +12,8 @@ import numpy as np
 from collections import deque
 import os
 import sys
+import queue
+
 
 # Fix for web_app folder structure
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -67,7 +69,22 @@ scaler = None
 serial_port_name = None
 serial_connected = False
 
+# Queue for thread-safe DB writes
+# Producer: serial thread enqueues dicts
+# Consumer: db worker thread commits to SQLAlchemy
+sensor_queue: "queue.Queue[dict]" = queue.Queue(maxsize=5000)
+
+def _get_db_session():
+    """Create a new SQLAlchemy session bound to the app.
+
+    Flask-SQLAlchemy manages sessions, but sessions are not thread-safe.
+    Each worker thread should use its own session.
+    """
+    return db.create_scoped_session()
+
+
 def find_arduino_port():
+
     """Automatically find Arduino/Wokwi serial port"""
     ports = serial.tools.list_ports.comports()
     
@@ -154,23 +171,23 @@ def read_serial_data():
                                 confidence = max(probabilities) * 100
                                 motion_type = prediction
                             
-                            # Save to database
-                            new_reading = SensorReading(
-                                ax=data['ax'], ay=data['ay'], az=data['az'],
-                                gx=data['gx'], gy=data['gy'], gz=data['gz'],
-                                temperature=data['temperature'],
-                                roll=data['roll'], pitch=data['pitch'],
-                                motion_type=motion_type, confidence=confidence
-                            )
-                            db.session.add(new_reading)
-                            db.session.commit()
-                            
+                            # Enqueue DB write (db thread will commit)
+                            sensor_queue.put({
+                                'ax': data['ax'], 'ay': data['ay'], 'az': data['az'],
+                                'gx': data['gx'], 'gy': data['gy'], 'gz': data['gz'],
+                                'temperature': data['temperature'],
+                                'roll': data['roll'], 'pitch': data['pitch'],
+                                'motion_type': motion_type,
+                                'confidence': confidence,
+                            })
+
                             # Update latest
                             latest_reading = data.copy()
                             latest_reading['timestamp'] = datetime.utcnow().isoformat()
                             latest_reading['motion_type'] = motion_type
                             latest_reading['confidence'] = confidence
                             reading_history.append(latest_reading.copy())
+
                             
                             # Console output
                             motion_str = f" | 🧠 {motion_type.upper()} ({confidence:.0f}%)" if motion_type else ""
@@ -186,6 +203,7 @@ def read_serial_data():
         time.sleep(0.01)
 
 def load_ml_models():
+
     """Load pre-trained ML models"""
     global ml_model, scaler
     models_dir = os.path.join(BASE_DIR, 'models')
@@ -207,9 +225,51 @@ def load_ml_models():
         return False
 
 # Start threads
+# Load ML models first to avoid None predictions during early serial reads.
+load_ml_models()
 serial_thread = threading.Thread(target=read_serial_data, daemon=True)
 serial_thread.start()
-load_ml_models()
+
+# DB worker thread (consumes queue and writes to DB)
+def db_worker():
+    while True:
+        try:
+            item = sensor_queue.get(timeout=1)
+        except queue.Empty:
+            continue
+
+        try:
+            # Use separate session per thread
+            sess = _get_db_session()
+            with app.app_context():
+                reading = SensorReading(
+                    ax=item['ax'], ay=item['ay'], az=item['az'],
+                    gx=item['gx'], gy=item['gy'], gz=item['gz'],
+                    temperature=item['temperature'],
+                    roll=item['roll'], pitch=item['pitch'],
+                    motion_type=item.get('motion_type'),
+                    confidence=item.get('confidence')
+                )
+                sess.add(reading)
+                sess.commit()
+
+            # Update latest/ history in producer thread only
+        except Exception as e:
+            try:
+                sess.rollback()
+            except Exception:
+                pass
+            print(f"DB worker error: {e}")
+        finally:
+            try:
+                sensor_queue.task_done()
+            except Exception:
+                pass
+
+
+db_thread = threading.Thread(target=db_worker, daemon=True)
+db_thread.start()
+
 
 # Flask Routes
 @app.route('/')
