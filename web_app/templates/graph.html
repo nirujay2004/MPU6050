@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sensor Graphs - MPU6050</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="logo">
+                <span>📈</span>
+                <span>MPU6050 Motion Tracker</span>
+            </div>
+            <div class="nav-links">
+                <a href="/">Dashboard</a>
+                <a href="/graph">Graphs</a>
+                <a href="/ml-dashboard">ML Insights</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="chart-container">
+            <div class="panel-title">📊 Accelerometer Data (g)</div>
+            <canvas id="accelChart"></canvas>
+        </div>
+
+        <div class="chart-container">
+            <div class="panel-title">🔄 Gyroscope Data (°/s)</div>
+            <canvas id="gyroChart"></canvas>
+        </div>
+
+        <div class="chart-container">
+            <div class="panel-title">📐 Orientation Angles (degrees)</div>
+            <canvas id="angleChart"></canvas>
+        </div>
+
+        <div class="chart-container">
+            <div class="panel-title">🌡️ Temperature History</div>
+            <canvas id="tempChart"></canvas>
+        </div>
+    </div>
+
+    <div class="ml-status">
+        <span class="status-dot"></span>
+        Live Updates: <span id="update-count">0</span> readings
+    </div>
+
+    <script>
+        let accelChart, gyroChart, angleChart, tempChart;
+        let dataPoints = [];
+        
+        function initCharts() {
+            const commonOptions = {
+                responsive: true,
+                maintainAspectRatio: true,
+                animation: false,
+                scales: {
+                    x: { title: { display: true, text: 'Time (seconds ago)', color: '#fff' }, grid: { color: 'rgba(255,255,255,0.1)' } },
+                    y: { title: { display: true, color: '#fff' }, grid: { color: 'rgba(255,255,255,0.1)' } }
+                },
+                plugins: { legend: { labels: { color: '#fff' } } }
+            };
+            
+            accelChart = new Chart(document.getElementById('accelChart'), {
+                type: 'line',
+                data: { labels: [], datasets: [
+                    { label: 'X', borderColor: '#ef4444', data: [], tension: 0.4, fill: false },
+                    { label: 'Y', borderColor: '#10b981', data: [], tension: 0.4, fill: false },
+                    { label: 'Z', borderColor: '#3b82f6', data: [], tension: 0.4, fill: false }
+                ]},
+                options: commonOptions
+            });
+            
+            gyroChart = new Chart(document.getElementById('gyroChart'), {
+                type: 'line',
+                data: { labels: [], datasets: [
+                    { label: 'X', borderColor: '#ef4444', data: [], tension: 0.4, fill: false },
+                    { label: 'Y', borderColor: '#10b981', data: [], tension: 0.4, fill: false },
+                    { label: 'Z', borderColor: '#3b82f6', data: [], tension: 0.4, fill: false }
+                ]},
+                options: commonOptions
+            });
+            
+            angleChart = new Chart(document.getElementById('angleChart'), {
+                type: 'line',
+                data: { labels: [], datasets: [
+                    { label: 'Roll', borderColor: '#f59e0b', data: [], tension: 0.4, fill: false },
+                    { label: 'Pitch', borderColor: '#8b5cf6', data: [], tension: 0.4, fill: false }
+                ]},
+                options: commonOptions
+            });
+            
+            tempChart = new Chart(document.getElementById('tempChart'), {
+                type: 'line',
+                data: { labels: [], datasets: [
+                    { label: 'Temperature', borderColor: '#ec489a', data: [], tension: 0.4, fill: false }
+                ]},
+                options: commonOptions
+            });
+        }
+        
+        async function updateGraphs() {
+            try {
+                const response = await fetch('/api/data');
+                const data = await response.json();

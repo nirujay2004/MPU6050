@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "author": "MPU6050 Project",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-arduino-uno",
+      "id": "uno",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-mpu6050",
+      "id": "mpu1",
+      "top": -120,
+      "left": 200,
+      "attrs": {}
+    }
+  ],
+  "connections": [
+    ["uno:5V", "mpu1:VCC", "red"],
+    ["uno:GND.1", "mpu1:GND", "black"],
+    ["uno:A4", "mpu1:SDA", "blue"],
+    ["uno:A5", "mpu1:SCL", "yellow"]
+  ],
+  "serialMonitor": {
+    "display": "always"
+  }
+}

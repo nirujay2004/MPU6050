@@ -1,0 +1,11 @@
+[wokwi]
+version = 1
+firmware = ".pio/build/uno/firmware.hex"
+elf = ".pio/build/uno/firmware.elf"
+
+[serial]
+monitor = true
+speed = 9600
+
+[attached]
+wokwi-mpu6050 = true

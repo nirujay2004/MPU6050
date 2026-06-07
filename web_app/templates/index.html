@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MPU6050 Sensor Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="logo">
+                <span>🎯</span>
+                <span>MPU6050 Motion Tracker</span>
+            </div>
+            <div class="nav-links">
+                <a href="/">Dashboard</a>
+                <a href="/graph">Graphs</a>
+                <a href="/ml-dashboard">ML Insights</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-title">Temperature</div>
+                <div class="stat-value" id="temp-value">--<span class="stat-unit">°C</span></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Roll Angle</div>
+                <div class="stat-value" id="roll-value">--<span class="stat-unit">°</span></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Pitch Angle</div>
+                <div class="stat-value" id="pitch-value">--<span class="stat-unit">°</span></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Total Readings</div>
+                <div class="stat-value" id="total-readings">--</div>
+            </div>
+        </div>
+
+        <!-- Sensor Data Panel -->
+        <div class="data-panel">
+            <div class="panel-title">📊 Real-Time Sensor Data</div>
+            <div class="sensor-grid">
+                <div class="sensor-item">
+                    <div class="sensor-label">Accelerometer X</div>
+                    <div class="sensor-value" id="ax">--<span class="stat-unit">g</span></div>
+                </div>
+                <div class="sensor-item">
+                    <div class="sensor-label">Accelerometer Y</div>
+                    <div class="sensor-value" id="ay">--<span class="stat-unit">g</span></div>
+                </div>
+                <div class="sensor-item">
+                    <div class="sensor-label">Accelerometer Z</div>
+                    <div class="sensor-value" id="az">--<span class="stat-unit">g</span></div>
+                </div>
+                <div class="sensor-item">
+                    <div class="sensor-label">Gyroscope X</div>
+                    <div class="sensor-value" id="gx">--<span class="stat-unit">°/s</span></div>
+                </div>
+                <div class="sensor-item">
+                    <div class="sensor-label">Gyroscope Y</div>
+                    <div class="sensor-value" id="gy">--<span class="stat-unit">°/s</span></div>
+                </div>
+                <div class="sensor-item">
+                    <div class="sensor-label">Gyroscope Z</div>
+                    <div class="sensor-value" id="gz">--<span class="stat-unit">°/s</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ML Prediction Panel -->
+        <div class="data-panel">
+            <div class="panel-title">🤖 Motion Analysis</div>
+            <div style="text-align: center; padding: 2rem;">
+                <div id="prediction-label" style="font-size: 1.5rem; margin-bottom: 1rem;">
+                    <span class="prediction-badge prediction-stable">Analyzing...</span>
+                </div>
+                <div id="confidence-text" style="color: #667eea; margin-top: 0.5rem;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="ml-status">
+        <span class="status-dot"></span>
+        ML Model: <span id="ml-status-text">Loading...</span>
+    </div>
+
+    <script>
+        async function fetchData() {
+            try {
+                const response = await fetch('/api/latest');
+                const data = await response.json();
+                
+                if (data.status === 'waiting_for_data') {
+                    console.log('Waiting for sensor data...');
+                    return;
+                }
+                
+                if (data.roll !== undefined) {
+                    document.getElementById('temp-value').innerHTML = data.temperature?.toFixed(1) + '<span class="stat-unit">°C</span>';
+                    document.getElementById('roll-value').innerHTML = data.roll?.toFixed(1) + '<span class="stat-unit">°</span>';
+                    document.getElementById('pitch-value').innerHTML = data.pitch?.toFixed(1) + '<span class="stat-unit">°</span>';
+                    document.getElementById('ax').innerHTML = data.ax?.toFixed(3) + '<span class="stat-unit">g</span>';
+                    document.getElementById('ay').innerHTML = data.ay?.toFixed(3) + '<span class="stat-unit">g</span>';
+                    document.getElementById('az').innerHTML = data.az?.toFixed(3) + '<span class="stat-unit">g</span>';
+                    document.getElementById('gx').innerHTML = data.gx?.toFixed(1) + '<span class="stat-unit">°/s</span>';
+                    document.getElementById('gy').innerHTML = data.gy?.toFixed(1) + '<span class="stat-unit">°/s</span>';
+                    document.getElementById('gz').innerHTML = data.gz?.toFixed(1) + '<span class="stat-unit">°/s</span>';
+                    
+                    if (data.motion_type) {
+                        const badgeClass = {
+                            'stable': 'prediction-stable',
+                            'erratic': 'prediction-erratic',
+                            'rotating': 'prediction-rotating',
+                            'tilted': 'prediction-tilted'
+                        }[data.motion_type] || 'prediction-stable';
+                        
+                        document.getElementById('prediction-label').innerHTML = 
+                            `<span class="prediction-badge ${badgeClass}">${data.motion_type.toUpperCase()}</span>`;
+                        
+                        if (data.confidence) {
+                            document.getElementById('confidence-text').innerHTML = 
+                                `Confidence: ${data.confidence.toFixed(1)}%`;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            }
+            
+            try {
+                const statsResponse = await fetch('/api/stats');
+                const stats = await statsResponse.json();
+                if (stats.total_readings !== undefined) {
+                    document.getElementById('total-readings').innerHTML = stats.total_readings;
+                }
+            } catch (error) {
+                console.error('Error fetching stats:', error);
+            }
+        }
+        
+        async function checkStatus() {
+            try {
+                const response = await fetch('/api/stats');
+                const stats = await response.json();
+                if (stats.serial_connected) {
+                    document.getElementById('ml-status-text').innerHTML = 'Active';
+                    document.getElementById('ml-status-text').style.color = '#4ade80';
+                } else {
+                    document.getElementById('ml-status-text').innerHTML = 'Waiting for Wokwi';
+                    document.getElementById('ml-status-text').style.color = '#fbbf24';
+                }
+            } catch (error) {
+                document.getElementById('ml-status-text').innerHTML = 'Error';
+                document.getElementById('ml-status-text').style.color = '#ef4444';
+            }
+        }
+        
+        fetchData();
+        checkStatus();
+        setInterval(fetchData, 500);
+        setInterval(checkStatus, 5000);
+    </script>
+    <!-- For index.html -->
+<script src="/static/js/main.js"></script>
+</body>
+</html>
